@@ -540,6 +540,41 @@ void testJumpToWindow() {
   snapshot(a, w, '08_edge_after_jump', scale: 1);
 }
 
+/// Окно, на котором сидит Dartty, перекрыли другим: падает сразу, а не через пару секунд.
+void testCoveredWindow() {
+  final (a, w) = newSim();
+  a.cfg.walk = false;
+  w.cx = 50;
+  w.cy = 50;
+  step(a, w, 4);
+  a.x = 700;
+  step(a, w, 0.1);
+  var ok = false;
+  for (var i = 0; i < 50 && !ok; i++) {
+    ok = a.tryHopToWindow();
+  }
+  step(a, w, 3);
+  check(a.loc == Loc.window, 'не сел на окно, loc=${a.loc}');
+  if (a.loc != Loc.window) return;
+  // окно в стороне не мешает
+  w.wins.insert(0, WinInfo(102, a.x + 200, 100, a.x + 600, 900));
+  step(a, w, 1.5);
+  check(a.loc == Loc.window, 'упал, хотя окно сверху лежит в стороне, loc=${a.loc}');
+  // а это окно активировали, и оно закрыло место под Dartty
+  w.wins[0] = WinInfo(102, a.x - 300, 100, a.x + 300, 900);
+  final t0 = w.t;
+  var fellAt = -1.0;
+  while (w.t - t0 < 3 && fellAt < 0) {
+    step(a, w, 1 / fps);
+    if (a.loc != Loc.window) fellAt = w.t - t0;
+  }
+  stdout.writeln('  начал падать через ${(fellAt * 1000).round()} мс');
+  check(fellAt >= 0 && fellAt <= 0.5,
+      'после перекрытия окна должен упасть за 0,5 с, а не через ${fellAt.toStringAsFixed(2)} с');
+  step(a, w, 3);
+  check(a.loc == Loc.ground || a.loc == Loc.window, 'должен приземлиться, loc=${a.loc}');
+}
+
 /// Моргание каждые 3–6 с по 90–130 мс; плавная смена поз.
 void testBlinkAndCrossfade() {
   final (a, w) = newSim(seed: 11);
@@ -682,6 +717,7 @@ void main(List<String> args) {
     'poses': testRenderPoses,
     'walk': testWalk,
     'jump': testJumpToWindow,
+    'cover': testCoveredWindow,
     'blink': testBlinkAndCrossfade,
     'idlecost': testIdleCost,
     'content': testContent,

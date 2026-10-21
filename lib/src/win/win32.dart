@@ -231,6 +231,7 @@ const NIF_TIP = 0x04;
 const NIF_INFO = 0x10;
 const NIIF_INFO = 0x01;
 const GA_ROOT = 2;
+const GW_HWNDNEXT = 2;
 const MONITOR_DEFAULTTONEAREST = 2;
 const DT_WORDBREAK = 0x0010;
 const DT_CALCRECT = 0x0400;
@@ -332,6 +333,7 @@ final GetWindowRect =
 
 /// POINT по значению (8 байт) в x64 передаётся одним 64-битным регистром.
 final WindowFromPoint = _user32.lookupFunction<IntPtr Function(Int64), int Function(int)>('WindowFromPoint');
+final GetWindow = _user32.lookupFunction<IntPtr Function(IntPtr, Uint32), int Function(int, int)>('GetWindow');
 final GetAncestor = _user32.lookupFunction<IntPtr Function(IntPtr, Uint32), int Function(int, int)>('GetAncestor');
 final MonitorFromPoint =
     _user32.lookupFunction<IntPtr Function(Int64, Uint32), int Function(int, int)>('MonitorFromPoint');

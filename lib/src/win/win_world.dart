@@ -105,8 +105,21 @@ class WinWorld implements World {
 
   @override
   int rootAt(double x, double y) {
-    final h = WindowFromPoint(packPoint(x.toInt(), y.toInt()));
-    return h == 0 ? 0 : GetAncestor(h, GA_ROOT);
+    final px = x.toInt(), py = y.toInt();
+    final h = WindowFromPoint(packPoint(px, py));
+    if (h == 0) return 0;
+    final root = GetAncestor(h, GA_ROOT);
+    if (!isOwn(root)) return root;
+    // В точке сам Dartty (лапки в позе edge, свечение): ищем окно под ним по z-порядку.
+    var w = GetWindow(root, GW_HWNDNEXT);
+    for (var n = 0; w != 0 && n < 1000; n++, w = GetWindow(w, GW_HWNDNEXT)) {
+      if (isOwn(w) || IsWindowVisible(w) == 0 || IsIconic(w) != 0 || _isCloaked(w)) continue;
+      if ((GetWindowLongPtrW(w, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0) continue; // клики сквозь — не преграда
+      if (!_windowRect(w)) continue;
+      final r = _rect.ref;
+      if (px >= r.left && px < r.right && py >= r.top && py < r.bottom) return w;
+    }
+    return 0;
   }
 
   @override

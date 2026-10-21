@@ -623,7 +623,7 @@ class App {
           final root = w.rootAt(x, wi.t + _probeOffset);
           if (root != surf && root != 0 && !w.ownWindow(root)) {
             surfMissCount++;
-            if (surfMissCount > 4) {
+            if (surfMissCount > 2) {
               startFall();
               return;
             }

@@ -31,6 +31,9 @@ abstract class World {
   Rect4 workArea(double x, double y);
   List<WinInfo> candidateWindows();
   WinInfo? windowAlive(int h);
+
+  /// Верхнее окно в точке, не считая окон самого Dartty (его лапки и свечение
+  /// не должны мешать понять, что окно под ним закрыли).
   int rootAt(double x, double y);
   bool ownWindow(int h);
   double idleSeconds();
