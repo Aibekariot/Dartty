@@ -15,7 +15,7 @@ Dartty — маскот-компаньон для рабочего стола Wi
 ## Предлагаемая структура
 
 ```
-pubspec.yaml               # name: dartty, sdk: ^3.5.0, без зависимостей
+pubspec.yaml               # name: dartty, sdk: ^3.8.0 (нужен для lints 6), без зависимостей
 bin/dartty.dart            # точка входа: main()
 lib/src/app.dart           # «мозг»: состояние, физика, эмоции, таймеры (без Win32!)
 lib/src/world.dart         # абстракция World (как interface World в app.go)
