@@ -54,7 +54,13 @@ class LayeredWindow {
     _h = h;
   }
 
+  static int presents = 0, presentUs = 0;
+  static final _presentWatch = Stopwatch();
+
   void _present(Img img, int px, int py, int a) {
+    _presentWatch
+      ..reset()
+      ..start();
     _ensure(img.w, img.h);
     if (_bits.address == 0) return;
     _bits.asTypedList(img.w * img.h * 4).setAll(0, img.pix);
@@ -77,6 +83,8 @@ class LayeredWindow {
     y = py;
     alpha = a;
     _presented = true;
+    presents++;
+    presentUs += _presentWatch.elapsedMicroseconds;
   }
 
   void apply(Layer ly) {
@@ -332,16 +340,56 @@ void _onCommand(int id) {
 
 // ---------- Кадр и оконная процедура ----------
 
+// `--stats`: раз в 10 с пишет в журнал, на что уходит время.
+bool _stats = false;
+int _statFrames = 0, _statFrameUs = 0, _statJank = 0;
+double _statPrevT = 0, _statMaxGap = 0;
+double _statAt = 0;
+final _statPoses = <String, int>{};
+final _frameWatch = Stopwatch();
+
+String _avgMs(int us, int n) => (us / (n == 0 ? 1 : n) / 1000).toStringAsFixed(2);
+
+void _logStats(double t) {
+  final span = t - _statAt;
+  final poses = (_statPoses.entries.toList()..sort((a, b) => b.value - a.value)).map((e) => '${e.key} ${e.value}');
+  logf('stats ${span.toStringAsFixed(1)} с: кадров $_statFrames (${(_statFrames / span).toStringAsFixed(1)}/с) '
+      'по ${_avgMs(_statFrameUs, _statFrames)} мс; отрисовок ${_app.statRenders} по '
+      '${_avgMs(_app.statRenderUs, _app.statRenders)} мс; вывод в окна ${LayeredWindow.presents} по '
+      '${_avgMs(LayeredWindow.presentUs, LayeredWindow.presents)} мс; занято '
+      '${(_statFrameUs / span / 1e4).toStringAsFixed(2)}% ядра; кадров позже 20 мс: $_statJank, '
+      'самая длинная пауза ${(_statMaxGap * 1000).toStringAsFixed(1)} мс; позы: ${poses.join(', ')}');
+  _statFrames = _statFrameUs = _statJank = 0;
+  _statMaxGap = 0;
+  _app.statRenders = _app.statRenderUs = 0;
+  LayeredWindow.presents = LayeredWindow.presentUs = 0;
+  _statPoses.clear();
+  _statAt = t;
+}
+
 void _onFrame() {
   try {
     final t = _t;
     _lastFrame = t;
+    _frameWatch
+      ..reset()
+      ..start();
     _app.frame();
     _mascotWin.setClickThrough(_app.cfg.clickThrough);
     _bubbleWin.setClickThrough(_app.cfg.clickThrough);
     _bugWin.apply(_app.bugLayer);
     _mascotWin.apply(_app.mascot);
     _bubbleWin.apply(_app.bubble);
+    if (_stats) {
+      _statFrames++;
+      _statFrameUs += _frameWatch.elapsedMicroseconds;
+      final gap = t - _statPrevT;
+      _statPrevT = t;
+      if (gap > 0.020 && gap < 1) _statJank++;
+      if (gap > _statMaxGap && gap < 1) _statMaxGap = gap;
+      _statPoses[_app.pose] = (_statPoses[_app.pose] ?? 0) + 1;
+      if (t - _statAt >= 10) _logStats(t);
+    }
     if (t - _lastTopmost >= 3) {
       _lastTopmost = t;
       for (final w in [_bugWin, _mascotWin, _bubbleWin]) {
@@ -515,9 +563,9 @@ Future<void> runDartty(List<String> args) async {
     }
 
     // Только один Dartty одновременно (то же имя мьютекса, что у Go-версии).
-    final mutex = using((a) => CreateMutexW(nullptr, 0, wstr(r'Local\DarttyMascotMutex', a)));
-    final already = GetLastError() == ERROR_ALREADY_EXISTS;
-    if (already || WaitForSingleObject(mutex, 0) == WAIT_TIMEOUT) {
+    // GetLastError после CreateMutexW ненадёжен: Dart VM может затереть его между вызовами FFI,
+    // поэтому сначала пробуем открыть существующий мьютекс и ищем окно управления.
+    if (_anotherInstance()) {
       using((a) {
         final h = FindWindowW(wstr(_ctlClass, a), nullptr);
         if (h != 0) PostMessageW(h, _wmUnhide, 0, 0);
@@ -539,10 +587,27 @@ Future<void> runDartty(List<String> args) async {
   exit(0);
 }
 
+const _mutexName = r'Local\DarttyMascotMutex';
+
+bool _anotherInstance() => using((a) {
+      final name = wstr(_mutexName, a);
+      final existing = OpenMutexW(SYNCHRONIZE, 0, name);
+      if (existing != 0) {
+        CloseHandle(existing);
+        return true;
+      }
+      if (FindWindowW(wstr(_ctlClass, a), nullptr) != 0) return true;
+      // Создаём свой и сразу владеем им: второй Dart-экземпляр, запущенный в ту же
+      // секунду, получит WAIT_TIMEOUT. Дескриптор живёт до конца процесса.
+      final mine = CreateMutexW(nullptr, 1, name);
+      return mine == 0 || WaitForSingleObject(mine, 0) == WAIT_TIMEOUT;
+    });
+
 /// Синхронная часть: окна и цикл сообщений. Отсюда не возвращаемся в event loop,
 /// поэтому весь GUI-код всегда на одном потоке ОС.
 void _runWindows(List<String> args) {
   _threadId = GetCurrentThreadId();
+  _stats = args.contains('--stats');
   timeBeginPeriod(1);
   final exePath = Platform.resolvedExecutable;
   _hInst = GetModuleHandleW(nullptr);
@@ -612,9 +677,16 @@ void _runWindows(List<String> args) {
 }
 
 /// 60 кадров в секунду: сообщения → кадр → сон до следующего кадра или до ввода.
+///
+/// Спим на таймере высокого разрешения: в Windows 11 timeBeginPeriod может не
+/// действовать, и обычный таймаут просыпается по сетке 15,6 мс (было ~40 к/с).
 void _loop() {
   final msg = mem<MSG>();
   const frameDt = 1 / 60;
+  final timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+  if (timer == 0) logf('нет таймера высокого разрешения, кадры будут по timeBeginPeriod');
+  final handles = mem<IntPtr>()..value = timer;
+  final due = mem<Int64>();
   var next = _t;
   while (!_quitting) {
     while (PeekMessageW(msg, 0, 0, 0, PM_REMOVE) != 0) {
@@ -627,13 +699,20 @@ void _loop() {
     }
     if (_quitting) break;
     final t = _t;
-    if (t >= next - 0.0008) {
+    if (t >= next - 0.0005) {
       _onFrame();
       next += frameDt;
       if (next < t) next = t + frameDt; // после долгой паузы не догоняем пропущенные кадры
     }
-    final waitMs = ((next - _t) * 1000).floor();
-    if (waitMs > 0) MsgWaitForMultipleObjectsEx(0, nullptr, waitMs, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    final wait = next - _t;
+    if (wait <= 0.0002) continue;
+    if (timer != 0) {
+      due.value = -(wait * 1e7).round(); // относительное время в единицах 100 нс
+      SetWaitableTimer(timer, due, 0, nullptr, nullptr, 0);
+      MsgWaitForMultipleObjectsEx(1, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    } else {
+      MsgWaitForMultipleObjectsEx(0, nullptr, (wait * 1000).floor(), QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+    }
   }
 }
 

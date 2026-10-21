@@ -247,6 +247,10 @@ const SM_CYICON = 12;
 const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 const ERROR_ALREADY_EXISTS = 183;
 const WAIT_TIMEOUT = 258;
+const SYNCHRONIZE = 0x00100000;
+const CREATE_WAITABLE_TIMER_HIGH_RESOLUTION = 0x00000002;
+const TIMER_ALL_ACCESS = 0x001F0003;
+const INFINITE = 0xFFFFFFFF;
 
 /// (HKEY)(LONG)0x80000001 — со знаковым расширением, как в заголовках Windows.
 const HKEY_CURRENT_USER = -0x7FFFFFFF;
@@ -394,6 +398,14 @@ final GetModuleHandleW =
     _kernel32.lookupFunction<IntPtr Function(Pointer<Uint16>), int Function(Pointer<Uint16>)>('GetModuleHandleW');
 final CreateMutexW = _kernel32.lookupFunction<IntPtr Function(Pointer, Int32, Pointer<Uint16>),
     int Function(Pointer, int, Pointer<Uint16>)>('CreateMutexW');
+final OpenMutexW =
+    _kernel32.lookupFunction<IntPtr Function(Uint32, Int32, Pointer<Uint16>), int Function(int, int, Pointer<Uint16>)>(
+        'OpenMutexW');
+final CreateWaitableTimerExW = _kernel32.lookupFunction<IntPtr Function(Pointer, Pointer<Uint16>, Uint32, Uint32),
+    int Function(Pointer, Pointer<Uint16>, int, int)>('CreateWaitableTimerExW');
+final SetWaitableTimer = _kernel32.lookupFunction<
+    Int32 Function(IntPtr, Pointer<Int64>, Int32, Pointer, Pointer, Int32),
+    int Function(int, Pointer<Int64>, int, Pointer, Pointer, int)>('SetWaitableTimer');
 final WaitForSingleObject =
     _kernel32.lookupFunction<Uint32 Function(IntPtr, Uint32), int Function(int, int)>('WaitForSingleObject');
 final GetLastError = _kernel32.lookupFunction<Uint32 Function(), int Function()>('GetLastError', isLeaf: true);

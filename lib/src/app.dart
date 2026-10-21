@@ -126,6 +126,10 @@ class App {
 
   final _bags = <String, List<int>>{};
 
+  /// Счётчики для `--stats`: сколько раз и сколько микросекунд рисовался Dartty.
+  int statRenders = 0, statRenderUs = 0;
+  final _statWatch = Stopwatch();
+
   App(this.w, this.cfg, this.bank, {math.Random? random, double Function()? clock, void Function(Settings)? save})
       : rnd = random ?? math.Random(),
         _clockFn = clock,
@@ -1313,7 +1317,12 @@ class App {
     renderKey = key;
     var img = mascot.img;
     if (img == null || img.w != wc || img.h != hc) img = mascot.img = Img(wc, hc);
+    _statWatch
+      ..reset()
+      ..start();
     renderer.render(img, f, s, wc / 2 + fx, footY + fy);
+    statRenders++;
+    statRenderUs += _statWatch.elapsedMicroseconds;
     mascot.dirty = true;
   }
 
