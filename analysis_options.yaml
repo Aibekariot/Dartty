@@ -1,0 +1,15 @@
+include: package:lints/recommended.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+
+linter:
+  rules:
+    # Win32-имена (WM_TIMER, RECT, hWnd) оставлены как в документации Microsoft.
+    constant_identifier_names: false
+    non_constant_identifier_names: false
+    camel_case_types: false
+
+formatter:
+  page_width: 120

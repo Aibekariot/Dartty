@@ -1,0 +1,5 @@
+build/
+.dart_tool/
+lib/src/assets_data.dart
+reference/
+*.exe
